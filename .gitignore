@@ -216,3 +216,22 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Node.js and Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+.eslintcache
+.stylelintcache
+.vite-inspect
+.yarn/
+.pnpm-store/
+
+# Local database and Docker mounts
+pgdata/
+docker-volumes/
+.env
+.env.example
+**/.env
+**/.env.example
