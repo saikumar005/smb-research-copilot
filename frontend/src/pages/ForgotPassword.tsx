@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Brain, ArrowLeft } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { Input } from '../components/ui/Input';
@@ -73,7 +73,7 @@ export const ForgotPassword: React.FC = () => {
             </Button>
           </form>
         ) : (
-          <div style={{ textSelf: 'center', marginTop: '8px' }}>
+          <div style={{ textAlign: 'center', marginTop: '8px' }}>
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
               Check your backend container logs in the terminal window to find the generated reset link.
             </p>

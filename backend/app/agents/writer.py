@@ -1,9 +1,12 @@
 import time
 import logging
-from openai import OpenAI
+import asyncio
+from openai import OpenAI, AsyncOpenAI
 from app.core.config import settings
 from app.services.memory_service import MemoryService
 from app.agents.state import AgentState
+from app.services.prompt_service import PromptService
+from langchain_core.runnables import RunnableConfig
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +19,10 @@ openai_client = OpenAI(
     api_key=api_key,
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
 )
+async_openai_client = AsyncOpenAI(
+    api_key=api_key,
+    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+)
 
 # Use gemini-2.5-flash for all writer completions.
 # flash has a much more generous free-tier quota than pro and produces
@@ -24,45 +31,62 @@ MODEL = "gemini-2.5-flash"
 logger.info("Writer Agent initialized using Gemini Client (model: %s).", MODEL)
 
 mem_client = MemoryService.register_client(openai_client)
+async_mem_client = MemoryService.register_client(async_openai_client)
 
 
-def _completion_with_retry(messages: list, max_attempts: int = 3) -> str:
+
+async def _completion_with_retry_stream(messages: list, event_queue=None, max_attempts: int = 3) -> str:
     """
     Call the LLM with exponential backoff on 429 (rate-limit) errors.
-    Returns the text content of the first choice.
+    Streams back content chunks to the event_queue, and returns full accumulated text.
     """
     delay = 35  # initial wait in seconds on a 429
     for attempt in range(1, max_attempts + 1):
         try:
-            response = openai_client.chat.completions.create(
+            response = await async_openai_client.chat.completions.create(
                 model=MODEL,
                 messages=messages,
                 temperature=0.7,
+                stream=True,
+                timeout=30.0
             )
-            return response.choices[0].message.content
+            full_text = ""
+            async for chunk in response:
+                content = chunk.choices[0].delta.content or ""
+                if content:
+                    full_text += content
+                    if event_queue:
+                        await event_queue.put({"type": "token", "content": content})
+            return full_text
         except Exception as e:
             err_str = str(e)
             if "429" in err_str and attempt < max_attempts:
                 logger.warning(
-                    "Writer Node: Rate-limited (attempt %d/%d). Waiting %ds before retry...",
+                    "Writer Node: Rate-limited (attempt %d/%d) during streaming. Waiting %ds before retry...",
                     attempt, max_attempts, delay,
                 )
-                time.sleep(delay)
+                await asyncio.sleep(delay)
                 delay = int(delay * 1.5)  # exponential backoff
             else:
                 raise
-    raise RuntimeError("Writer: all retry attempts exhausted.")
+    raise RuntimeError("Writer: all streaming retry attempts exhausted.")
 
 
-def writer_node(state: AgentState) -> dict:
+async def writer_node(state: AgentState, config: RunnableConfig = None) -> dict:
     """
     Writer Agent: Synthesizes chat history, research findings, and target mode
     to draft structured business outputs.
     """
     logger.info("Writer Node: Generating draft copy...")
+    
+    event_queue = config.get("configurable", {}).get("event_queue") if config else None
+    if event_queue:
+        await event_queue.put({"type": "status", "agent": "writer", "message": "Writer agent is composing the business draft..."})
 
     if hasattr(mem_client, "attribution"):
         mem_client.attribution(entity_id=str(state["user_id"]), process_id="research_copilot")
+    if hasattr(async_mem_client, "attribution"):
+        async_mem_client.attribution(entity_id=str(state["user_id"]), process_id="research_copilot")
 
     mode = state.get("mode", "general")
     findings = state.get("research_findings", [])
@@ -82,51 +106,19 @@ def writer_node(state: AgentState) -> dict:
                 f"-----------------------------------------\n"
             )
 
-    # Build prompt based on mode
-    system_prompt = ""
-    if mode == "research":
-        system_prompt = (
-            "You are a Senior Business Analyst. Your goal is to draft a comprehensive Company Brief.\n"
-            "You must follow this exact output structure:\n"
-            "1. **Company Overview**: A concise summary of the business, its size, domain, and core value proposition.\n"
-            "2. **Key Findings**: Important recent announcements, products, or developments found in search results.\n"
-            "3. **Likely Priorities & Pain Points**: Analytical assessment of what this business is prioritizing or struggling with.\n"
-            "4. **Suggested Outreach Angle**: Practical angle for sales or collaboration outreach.\n"
-            "5. **Sources**: Clickable markdown links to the sources used, formatted exactly as: `[1] [Source Title](URL) - snippet summary`.\n\n"
-            "Be analytical, professional, and write for non-technical business users."
-        )
-    elif mode == "email_draft":
-        system_prompt = (
-            "You are a sales copywriting expert. Write a highly tailored sales outreach email.\n"
-            "It should be concise (under 250 words), structured with clear spacing, professional yet engaging, "
-            "and leverage the company findings and user criteria. Do not use generic buzzwords. "
-            "Incorporate a soft call-to-action."
-        )
-    elif mode == "task_list":
-        system_prompt = (
-            "You are a Business Operations Consultant. Write a structured follow-up task list.\n"
-            "Format the output as a clean checklist using `- [ ]` syntax.\n"
-            "Group tasks logically (e.g., Preparation, Customization, Outreach, Follow-up) and give actionable, concrete instructions."
-        )
-    else:
-        system_prompt = (
-            "You are a Business Research Copilot. Answer the user's message conversationally.\n"
-            "Be professional, direct, and leverage any available web research context if helpful."
-        )
+    # Build prompt based on mode using PromptService
+    system_prompt = PromptService.get_prompt("writer.yaml", mode)
 
     # If Judge has returned feedback for correction
     if feedback:
-        system_prompt += (
-            f"\n\n### CRITICAL: Self-Correction Request\n"
-            f"Your previous draft was rejected by the LLM Judge. Please revise it to address this feedback:\n"
-            f"'{feedback}'\n"
-            f"Do not make the same mistakes."
-        )
+        self_corr_tmpl = PromptService.get_prompt("writer.yaml", "self_correction")
+        system_prompt += self_corr_tmpl.format(feedback=feedback)
 
     # Build prompt sequence
     prompt_messages = [
         {"role": "system", "content": system_prompt}
     ]
+
 
     # Inject research findings as background knowledge
     if research_context:
@@ -151,7 +143,16 @@ def writer_node(state: AgentState) -> dict:
         prompt_messages.append({"role": "user", "content": "Please draft the response based on the system instructions."})
 
     try:
-        draft = _completion_with_retry(prompt_messages)
+        # Signal start of streamed content to the client
+        if event_queue:
+            await event_queue.put({"type": "stream_start"})
+            
+        draft = await _completion_with_retry_stream(prompt_messages, event_queue=event_queue)
+        
+        # Signal end of streamed content to the client
+        if event_queue:
+            await event_queue.put({"type": "stream_end"})
+            
         logger.info("Writer Node: Draft generated successfully.")
         return {
             "draft": draft,
@@ -159,7 +160,10 @@ def writer_node(state: AgentState) -> dict:
         }
     except Exception as e:
         logger.error("Error in Writer Node completion: %s", e)
+        if event_queue:
+            await event_queue.put({"type": "stream_end"})
         return {
             "draft": "[System Error: Writer failed to compile draft. Please try again.]",
             "next_step": "judge"
         }
+

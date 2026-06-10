@@ -1,0 +1,37 @@
+active_version: "v1.0"
+versions:
+  "v1.0":
+    criteria_research: |
+      1. MUST contain meaningful company information (overview, findings, or analysis) — not just a generic response.
+      2. MUST NOT be completely empty or contain only error messages.
+      3. If search results were available, the response should reference them in some way.
+      4. Minor formatting issues, missing sections, or incomplete source lists are acceptable — only fail if the content is fundamentally unhelpful or empty.
+    criteria_email_draft: |
+      1. MUST resemble a professional outreach email with a greeting, body, and sign-off.
+      2. MUST NOT be completely empty or contain only error messages.
+      3. Minor issues with tone, length, or formatting are acceptable.
+    criteria_task_list: |
+      1. MUST contain at least a few actionable tasks or checklist items.
+      2. MUST NOT be completely empty or contain only error messages.
+    criteria_general: |
+      1. MUST be a helpful, relevant response to the user's question.
+      2. MUST NOT be completely empty or contain only error messages.
+      3. Conversational responses, short answers, greetings, and polite messages are all acceptable and MUST be passed.
+    system_prompt: "You are a lenient Quality Assurance Judge. Only fail drafts that are fundamentally broken or empty."
+    judge_prompt: |
+      You are a Quality Assurance Judge for a Business Research Copilot.
+      Your job is to ensure the draft is USEFUL and RELEVANT to the user's request.
+      Be lenient — only reject drafts that are completely broken, empty, or totally off-topic.
+
+      Evaluate the draft according to these minimum criteria:
+      {criteria}
+
+      Draft to evaluate:
+      """
+      {draft}
+      """
+
+      Respond with a JSON object:
+      {{'passed': true/false, 'feedback': 'brief corrective feedback only if passed is false'}}
+
+      IMPORTANT: Default to passing (true) unless the draft clearly fails the minimum criteria above.

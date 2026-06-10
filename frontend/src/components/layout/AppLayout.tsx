@@ -1,6 +1,5 @@
 import React from 'react';
-import { LogOut, Brain, MessageSquare, Plus, Settings } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { LogOut, Brain, MessageSquare, Plus, Settings, Loader2 } from 'lucide-react';
 
 interface ChatThread {
   id: number;
@@ -12,6 +11,7 @@ interface AppLayoutProps {
   userEmail: string;
   chats: ChatThread[];
   activeChatId: number | null;
+  creatingChat?: boolean;
   onSelectChat: (id: number) => void;
   onCreateChat: () => void;
   onDeleteChat?: (id: number) => void;
@@ -24,13 +24,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   userEmail,
   chats,
   activeChatId,
+  creatingChat = false,
   onSelectChat,
   onCreateChat,
   onOpenMemorySettings,
   onLogout,
 }) => {
-  const navigate = useNavigate();
-
   return (
     <div className="app-container">
       {/* Sidebar Navigation */}
@@ -40,9 +39,24 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           <h2>Research Copilot</h2>
         </div>
 
-        <button className="new-chat-btn glow-btn-base glow-btn" onClick={onCreateChat}>
-          <Plus size={16} />
-          <span>New Research Chat</span>
+        {/* New Research Chat Button — with loading state and double-click guard */}
+        <button
+          className="new-chat-btn glow-btn-base glow-btn"
+          onClick={onCreateChat}
+          disabled={creatingChat}
+          aria-label="Create a new research thread"
+          title={creatingChat ? 'Creating thread…' : 'New Research Chat'}
+          style={{
+            opacity: creatingChat ? 0.75 : 1,
+            cursor: creatingChat ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {creatingChat ? (
+            <Loader2 size={16} className="spin-icon" />
+          ) : (
+            <Plus size={16} />
+          )}
+          <span>{creatingChat ? 'Creating…' : 'New Research Chat'}</span>
         </button>
 
         <nav className="sidebar-nav">
@@ -70,7 +84,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             <Settings size={16} />
             <span>Manage Memory</span>
           </button>
-          
+
           <div className="user-profile-badge">
             <span className="user-initial">{userEmail[0]?.toUpperCase()}</span>
             <span className="user-email-text" title={userEmail}>{userEmail}</span>

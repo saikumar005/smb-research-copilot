@@ -35,7 +35,7 @@ apiClient.interceptors.response.use(
   }
 );
 
-function logger_session_expiry() {
+export function logger_session_expiry() {
   console.warn("Session expired or token invalid. Clearing auth credentials.");
   localStorage.removeItem('token');
   // Only redirect if we are not already on login or signup views

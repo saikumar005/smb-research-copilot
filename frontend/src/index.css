@@ -43,14 +43,20 @@
   padding: 0;
 }
 
+html {
+  height: 100%;
+}
+
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: 15px;
   line-height: 1.6;
-  overflow: hidden;
+  /* overflow is NOT set here globally — auth pages need to scroll.
+     The chat layout sets overflow:hidden on its own container (.app-layout-root). */
   -webkit-font-smoothing: antialiased;
+  min-height: 100%;
 }
 
 a {
@@ -103,6 +109,13 @@ button, input, textarea {
 .animate-fade-in {
   animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* Spinning icon utility — used on loading indicators in buttons */
+.spin-icon {
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
 
 /* Glassmorphism Panel */
 .glass-panel {
@@ -177,13 +190,19 @@ button, input, textarea {
 .auth-wrapper {
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: flex-start;
   min-height: 100vh;
-  width: 100vw;
+  width: 100%;
   background-color: var(--bg-primary);
-  background-image: 
+  background-image:
     radial-gradient(circle at 50% 30%, rgba(157, 78, 221, 0.08) 0px, transparent 65%);
-  padding: 20px;
+  /* Vertical scroll enabled — body no longer blocks it */
+  overflow-y: auto;
+  padding: 40px 20px;
+  box-sizing: border-box;
+  /* Center card on tall viewports via auto top padding */
+  padding-top: max(40px, calc((100vh - 700px) / 2));
+  padding-bottom: 40px;
 }
 
 .auth-card {
@@ -192,7 +211,9 @@ button, input, textarea {
   padding: 40px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
+  /* Ensure card never gets clipped by the wrapper */
+  flex-shrink: 0;
 }
 
 .auth-header {
@@ -257,8 +278,9 @@ button, input, textarea {
   display: flex;
   height: 100vh;
   width: 100vw;
+  overflow: hidden; /* Chat layout is self-contained; body overflow is intentionally unset for auth pages */
   background-color: var(--bg-primary);
-  background-image: 
+  background-image:
     radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.06) 0px, transparent 40%),
     radial-gradient(at 100% 100%, rgba(157, 78, 221, 0.06) 0px, transparent 40%);
 }
@@ -1131,3 +1153,220 @@ button, input, textarea {
   color: #fca5a5;
   margin-top: -2px;
 }
+
+/* ── Google SSO ─────────────────────────────────────────────────────────── */
+
+/* Horizontal divider: ── or continue with ── */
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+}
+
+.auth-divider-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+/* Google Sign-In button */
+.google-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 20px;
+  background: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a1a;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  font-family: var(--font-sans);
+  letter-spacing: 0.01em;
+}
+
+.google-btn:hover:not(:disabled) {
+  background: #f5f5f5;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.google-btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.google-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Google 'G' logo SVG inline */
+.google-logo {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+/* Loading spinner override for Google button (dark on white) */
+.google-btn .spinner {
+  border-color: rgba(0, 0, 0, 0.15);
+  border-top-color: #1a1a1a;
+  width: 16px;
+  height: 16px;
+}
+
+/* ── Agent thoughts & streaming content accordion ── */
+.agent-thoughts-details {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  width: 100%;
+}
+
+.agent-thoughts-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.01);
+  transition: background 0.2s ease;
+}
+
+.agent-thoughts-summary:hover {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-primary);
+}
+
+.agent-thoughts-list {
+  padding: 8px 14px 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.agent-thought-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.agent-thought-bullet {
+  color: var(--accent-purple);
+  font-weight: bold;
+}
+
+.agent-thought-text {
+  flex: 1;
+}
+
+.streaming-markdown-content {
+  border-left: 2px solid rgba(157, 78, 221, 0.3);
+  padding-left: 14px;
+}
+
+/* Failed Draft Details styles */
+.failed-draft-details {
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  background: rgba(239, 68, 68, 0.02);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+  overflow: hidden;
+  transition: var(--transition-smooth);
+  width: 100%;
+  display: none; /* legacy - no longer used */
+}
+
+.failed-draft-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  user-select: none;
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.failed-draft-summary:hover {
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.failed-draft-badge {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.2);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-family: var(--font-title);
+}
+
+.failed-draft-feedback-preview {
+  color: var(--text-muted);
+  font-weight: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.failed-draft-content {
+  padding: 12px 16px;
+  border-top: 1px solid rgba(239, 68, 68, 0.1);
+  font-size: 14px;
+  color: var(--text-secondary);
+  background: rgba(7, 4, 14, 0.3);
+}
+
+
+/* Active drafting status container */
+.active-draft-container {
+  padding-left: 0;
+  margin-top: 4px;
+  width: 100%;
+}
+
+.active-draft-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-purple);
+  margin-bottom: 6px;
+  letter-spacing: 0.04em;
+  font-family: var(--font-title);
+  opacity: 0.8;
+}
+

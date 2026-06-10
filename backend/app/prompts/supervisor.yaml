@@ -1,0 +1,20 @@
+active_version: "v1.0"
+versions:
+  "v1.0":
+    research_query: |
+      You are the supervisor of a Business Research Copilot. The user requested company research.
+      User input: '{latest_user_message}'
+
+      Respond with a JSON object containing the key 'search_query' representing the best search term to query Google/DuckDuckGo.
+    classify_intent: |
+      You are the supervisor of a Business Research Copilot.
+      Analyze the user's message and classify whether answering it requires executing a web search for real-time external company details.
+
+      User message: '{latest_user_message}'
+
+      CRITICAL GUARDRAILS:
+      1. If the user is introducing themselves, stating their name, sharing their own background, role, company details, or preferences (e.g. "My name is...", "I am the Director of...", "We sell...", "Our product is...", "My target is..."), this is a personal fact sharing event. Answering it does NOT require research. Set 'needs_research' to false.
+      2. If the user is explicitly requesting research, analysis, or details about an external company (e.g., "Research Razorpay", "What does Stripe do?", "Look up HubSpot priorities"), set 'needs_research' to true and formulate a clean search query.
+      3. If the user is asking a general, conversational, or system question (e.g. "hi", "how are you", "what can you do"), set 'needs_research' to false.
+
+      Respond with a JSON object: {{'needs_research': true/false, 'search_query': 'clean search query if needs_research is true'}}

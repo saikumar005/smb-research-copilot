@@ -9,7 +9,10 @@ logger = logging.getLogger(__name__)
 
 # Initialize Memori wrapper pointing to our local PostgreSQL sessionmaker
 try:
+    from app.core.config import settings
     mem = Memori(conn=SessionLocal)
+    if settings.MEMORI_API_KEY:
+        mem.config.api_key = settings.MEMORI_API_KEY
     logger.info("Memori Labs memory infrastructure initialized successfully.")
 except Exception as e:
     logger.error(f"Failed to initialize Memori: {e}")
@@ -102,14 +105,144 @@ class MemoryService:
     @staticmethod
     def register_client(openai_client: Any) -> Any:
         """
-        Registers the OpenAI client with Memori to enable transparent fact extraction.
-        Every LLM response routed through this registered client is automatically
-        scanned; extracted facts are written to memori_entity_fact in PostgreSQL.
+        Bypasses default Memori cloud client registration to execute all LLM completions
+        completely locally/offline, avoiding rate-limiting 429 errors.
         """
-        if mem:
-            try:
-                logger.info("Registering OpenAI client with Memori")
-                return mem.llm.register(openai_client)
-            except Exception as e:
-                logger.error(f"Failed to register client with Memori: {e}")
         return openai_client
+
+    @staticmethod
+    async def extract_and_save_memories_async(user_id: int, user_msg: str, assistant_msg: str, client: Any) -> None:
+        """
+        Analyzes the latest conversation turn using the LLM to extract long-term user facts
+        and writes them directly to local PostgreSQL tables (memori_entity and memori_entity_fact).
+        """
+        if not user_msg or not assistant_msg:
+            return
+
+        import json
+        import uuid
+        import hashlib
+        import struct
+        from datetime import datetime
+        from app.core.database import SessionLocal
+
+        system_prompt = (
+            "You are a long-term memory extraction assistant.\n"
+            "Analyze the following user message and assistant reply.\n"
+            "Extract any permanent facts about the user (e.g. user's name, title, role, company name, "
+            "preferences, guidelines, constraints, or outreach style preferences).\n"
+            "Do NOT extract temporary conversational context (e.g. details of a specific email draft, "
+            "temporary search requests, or greeting text).\n"
+            "Respond ONLY with a JSON object containing a list of strings: {\"facts\": [\"fact 1\", \"fact 2\"]}. "
+            "If no long-term facts are found, return an empty list: {\"facts\": []}."
+        )
+
+        user_content = f"User message: \"{user_msg}\"\nAssistant reply: \"{assistant_msg}\""
+
+        try:
+            response = await client.chat.completions.create(
+                model="gemini-2.5-flash",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content}
+                ],
+                temperature=0.0,
+                response_format={"type": "json_object"}
+            )
+            res_content = response.choices[0].message.content
+            data = json.loads(res_content)
+            facts = data.get("facts", [])
+            if not facts:
+                return
+
+            logger.info("Local Memory: Extracted %d new facts for user %s: %s", len(facts), user_id, facts)
+
+            # Batch generate embeddings for all extracted facts
+            embs = []
+            if mem:
+                try:
+                    embs = mem.embed_texts(facts)
+                except Exception as embedding_err:
+                    logger.error("Failed to generate embeddings using Memori: %s", embedding_err)
+
+            db = SessionLocal()
+            try:
+                # Get or create entity
+                query_entity = text("SELECT id FROM memori_entity WHERE external_id = :external_id")
+                entity = db.execute(query_entity, {"external_id": str(user_id)}).fetchone()
+                if entity:
+                    entity_id = entity[0]
+                else:
+                    entity_uuid = str(uuid.uuid4())
+                    insert_entity = text(
+                        "INSERT INTO memori_entity (uuid, external_id, date_created, date_updated) "
+                        "VALUES (:uuid, :external_id, :now, :now) RETURNING id"
+                    )
+                    entity_id = db.execute(insert_entity, {
+                        "uuid": entity_uuid,
+                        "external_id": str(user_id),
+                        "now": datetime.now()
+                    }).scalar()
+                    db.commit()
+
+                # For each fact, check uniqueness (using SHA-256 hash) and insert if new
+                for idx, fact in enumerate(facts):
+                    fact = fact.strip()
+                    if not fact:
+                        continue
+                    
+                    if len(fact) > 500:
+                        fact = fact[:500]
+
+                    # Generate uniq SHA256 hash of the content to enforce uniqueness
+                    fact_hash = hashlib.sha256(fact.encode("utf-8")).hexdigest()
+
+                    # Check if this uniq hash already exists for this entity
+                    query_fact = text(
+                        "SELECT id FROM memori_entity_fact "
+                        "WHERE entity_id = :entity_id AND uniq = :uniq"
+                    )
+                    exists = db.execute(query_fact, {"entity_id": entity_id, "uniq": fact_hash}).fetchone()
+                    if exists:
+                        # Update date_last_time and increment num_times
+                        update_fact = text(
+                            "UPDATE memori_entity_fact "
+                            "SET num_times = num_times + 1, date_last_time = :now, date_updated = :now "
+                            "WHERE id = :id"
+                        )
+                        db.execute(update_fact, {"id": exists[0], "now": datetime.now()})
+                    else:
+                        # Serialize embedding as float32 bytes for PostgreSQL bytea
+                        packed_emb = None
+                        if idx < len(embs):
+                            emb = embs[idx]
+                            packed_emb = struct.pack(f"{len(emb)}f", *emb)
+                        
+                        if not packed_emb:
+                            logger.warning("Skipping fact '%s' insertion because no embedding was generated.", fact)
+                            continue
+
+                        # Insert new fact
+                        fact_uuid = str(uuid.uuid4())
+                        insert_fact = text(
+                            "INSERT INTO memori_entity_fact "
+                            "(uuid, entity_id, content, content_embedding, num_times, date_last_time, uniq, date_created, date_updated) "
+                            "VALUES (:uuid, :entity_id, :content, :content_embedding, 1, :now, :uniq, :now, :now)"
+                        )
+                        db.execute(insert_fact, {
+                            "uuid": fact_uuid,
+                            "entity_id": entity_id,
+                            "content": fact,
+                            "content_embedding": packed_emb,
+                            "uniq": fact_hash,
+                            "now": datetime.now()
+                        })
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                logger.error("Failed to write extracted facts to database: %s", e)
+            finally:
+                db.close()
+
+        except Exception as e:
+            logger.error("Failed local memory extraction: %s", e)

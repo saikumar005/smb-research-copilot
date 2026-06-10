@@ -10,11 +10,9 @@ import {
   CheckSquare, 
   Brain, 
   ExternalLink, 
-  FileText, 
-  Sparkles,
-  RefreshCw
+  Sparkles
 } from 'lucide-react';
-import { apiClient } from '../api/client';
+import { apiClient, logger_session_expiry } from '../api/client';
 import { AppLayout } from '../components/layout/AppLayout';
 import { Spinner } from '../components/ui/Spinner';
 import { MemoryManager } from '../components/memory/MemoryManager';
@@ -52,7 +50,15 @@ function processCitationLinks(content: string, sources: Source[]): string {
 
   let processed = content;
 
-  // Replace (Source N) — most common pattern from Writer agent
+  // 1. Replace "Source [N]" or "[Source N]" or "(Source N)"
+  processed = processed.replace(/(?:Source\s+)?\[(?:Source\s+)?(\d+)\]/gi, (_, num) => {
+    const idx = parseInt(num, 10) - 1;
+    if (idx >= 0 && idx < sources.length) {
+      return `[[${num}]](${sources[idx].link})`;
+    }
+    return `[${num}]`;
+  });
+
   processed = processed.replace(/\(Source\s+(\d+)\)/gi, (_, num) => {
     const idx = parseInt(num, 10) - 1;
     if (idx >= 0 && idx < sources.length) {
@@ -61,13 +67,22 @@ function processCitationLinks(content: string, sources: Source[]): string {
     return `(Source ${num})`;
   });
 
-  // Replace bare [N] that are NOT already part of a markdown link [text](url)
+  // 2. Replace bare [N] that are NOT already part of a markdown link [text](url)
   processed = processed.replace(/\[(\d+)\](?!\()/g, (_, num) => {
     const idx = parseInt(num, 10) - 1;
     if (idx >= 0 && idx < sources.length) {
       return `[[${num}]](${sources[idx].link})`;
     }
     return `[${num}]`;
+  });
+
+  // 3. Replace "Source N" (case-insensitive) when it is a separate word
+  processed = processed.replace(/\bSource\s+(\d+)\b/gi, (_, num) => {
+    const idx = parseInt(num, 10) - 1;
+    if (idx >= 0 && idx < sources.length) {
+      return `[[${num}]](${sources[idx].link})`;
+    }
+    return `Source ${num}`;
   });
 
   return processed;
@@ -100,6 +115,57 @@ export const Chat: React.FC = () => {
   const [pendingActionMode, setPendingActionMode] = useState<'research' | 'email_draft' | 'task_list' | null>(null);
   // Which action button is currently being validated by the backend (shows spinner on that pill)
   const [validatingMode, setValidatingMode] = useState<'research' | 'email_draft' | 'task_list' | null>(null);
+  // Creating chat guard — prevents double-clicks on "New Research Chat"
+  const [creatingChat, setCreatingChat] = useState(false);
+  // Global toast notification queue
+  const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'error' | 'info' }[]>([]);
+  
+  // Real-time output and reasoning streaming states
+  const [streamingThoughts, setStreamingThoughts] = useState<string[]>([]);
+  const [streamingSources, setStreamingSources] = useState<Source[]>([]);
+  // Single active content string — gets reset & rebuilt cleanly on each new writer attempt
+  const [activeContent, setActiveContent] = useState<string>('');
+  // Track which attempt number (1-indexed) we're on for display
+  const [attemptNumber, setAttemptNumber] = useState<number>(0);
+  // True when a new writer attempt is starting after a failed judge pass
+  const [isRefining, setIsRefining] = useState<boolean>(false);
+  // Whether streaming content has started (controls thoughts accordion open state)
+  const [contentStarted, setContentStarted] = useState<boolean>(false);
+  
+  const renderMarkdown = (content: string, sources: Source[] = []) => {
+    const processed = processCitationLinks(content, sources);
+    return (
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ href, children }) => {
+            const text = String(children ?? '');
+            const citationMatch = text.match(/^\[(\d+)\]$/);
+            if (citationMatch && href) {
+              return (
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="citation-superscript"
+                  title={`Source ${citationMatch[1]}: ${href}`}
+                >
+                  {citationMatch[1]}
+                </a>
+              );
+            }
+            return (
+              <a href={href} target="_blank" rel="noopener noreferrer">
+                {children}
+              </a>
+            );
+          },
+        }}
+      >
+        {processed}
+      </ReactMarkdown>
+    );
+  };
   
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const navigate = useNavigate();
@@ -161,16 +227,38 @@ export const Chat: React.FC = () => {
     }
   }, [activeChatId]);
 
+  /**
+   * Shows a toast notification that auto-dismisses after `duration` ms.
+   */
+  const showToast = (
+    message: string,
+    type: 'success' | 'error' | 'info' = 'info',
+    duration = 4000,
+  ) => {
+    const id = `${Date.now()}-${Math.random()}`;
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), duration);
+  };
+
   const handleCreateChat = async (title?: string) => {
+    if (creatingChat) return; // guard against double-clicks
+    setCreatingChat(true);
     try {
-      const res = await apiClient.post<ChatThread>('/chats', { 
-        title: title || 'New Research Thread' 
+      const res = await apiClient.post<ChatThread>('/chats', {
+        title: title || 'New Research Thread',
       });
       setChats((prev) => [res.data, ...prev]);
       setActiveChatId(res.data.id);
       setShowMemorySettings(false);
-    } catch (err) {
-      console.error(err);
+      showToast('Research thread created. Start typing to begin!', 'success');
+    } catch (err: unknown) {
+      console.error('Failed to create chat thread:', err);
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        'Could not create a new research thread. Please check your connection and try again.';
+      showToast(detail, 'error');
+    } finally {
+      setCreatingChat(false);
     }
   };
 
@@ -187,6 +275,116 @@ export const Chat: React.FC = () => {
     }
   };
 
+  const runWorkflowStream = async (streamUrl: string, bodyData: any, tempUserMsg: Message) => {
+    const token = localStorage.getItem('token');
+    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+
+    try {
+      setStreamingThoughts([]);
+      setStreamingSources([]);
+      setActiveContent('');
+      setAttemptNumber(0);
+      setIsRefining(false);
+      setContentStarted(false);
+      const response = await fetch(`${baseUrl}${streamUrl}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(bodyData)
+      });
+
+      if (response.status === 401) {
+        logger_session_expiry();
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Streaming request failed with status: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('Response body reader is not available.');
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data: ')) continue;
+
+          try {
+            const rawJson = trimmed.slice(6);
+            const parsed = JSON.parse(rawJson);
+
+            if (parsed.type === 'status') {
+              // Always add status messages to thinking steps — validation failures are shown there, not as banners
+              setStreamingThoughts((prev) => [...prev, parsed.message]);
+              // If a new self-correction is starting, show the refining indicator
+              if (parsed.message.toLowerCase().includes('triggering self-correction') ||
+                  parsed.message.toLowerCase().includes('self-correction')) {
+                setIsRefining(true);
+              }
+            } else if (parsed.type === 'stream_start') {
+              // New writer attempt starting — clear previous content and start fresh
+              setAttemptNumber((prev) => prev + 1);
+              setActiveContent('');
+              setIsRefining(false);
+              setContentStarted(false);
+            } else if (parsed.type === 'token') {
+              setActiveContent((prev) => prev + parsed.content);
+              setContentStarted(true);
+            } else if (parsed.type === 'done') {
+              if (parsed.metadata_json?.sources) {
+                setStreamingSources(parsed.metadata_json.sources);
+              }
+              setIsRefining(false);
+            }
+          } catch (e) {
+            console.error('Error parsing stream line:', line, e);
+          }
+        }
+      }
+
+      // Reload messages & chats after done
+      const refreshed = await apiClient.get<Message[]>(`/chats/${activeChatId}/messages`);
+      setMessages(refreshed.data);
+      const threadsRes = await apiClient.get<ChatThread[]>('/chats');
+      setChats(threadsRes.data);
+
+    } catch (err) {
+      console.error(err);
+      setMessages((prev) => [
+        ...prev.filter(m => m.id !== tempUserMsg.id),
+        tempUserMsg,
+        {
+          id: Date.now() + 1,
+          chat_id: activeChatId!,
+          role: 'assistant',
+          content: '⚠️ Streaming execution failed. Please verify your API key configuration.',
+          created_at: new Date().toISOString()
+        }
+      ]);
+    } finally {
+      setSending(false);
+      setStreamingThoughts([]);
+      setStreamingSources([]);
+      setActiveContent('');
+      setAttemptNumber(0);
+      setIsRefining(false);
+      setContentStarted(false);
+    }
+  };
+
   const handleSendMessage = async (text: string) => {
     if (!text.trim() || activeChatId === null || sending) return;
     
@@ -194,7 +392,6 @@ export const Chat: React.FC = () => {
     setSending(true);
     
     // If an action mode is pending, this message is the user's input for that action.
-    // Route it through /actions/run instead of the regular chat endpoint.
     const activeMode = pendingActionMode;
     if (activeMode) setPendingActionMode(null); // clear mode before async work
     
@@ -209,43 +406,16 @@ export const Chat: React.FC = () => {
     };
     setMessages((prev) => [...prev, tempUserMsg]);
 
-    try {
-      if (activeMode) {
-        // User is responding to an action prompt — run the specialized agent mode
-        await apiClient.post<Message>('/actions/run', {
-          chat_id: activeChatId,
-          mode: activeMode,
-          message: text,
-        });
-      } else {
-        // Normal conversational message
-        await apiClient.post<Message>(`/chats/${activeChatId}/messages`, {
-          content: text,
-        });
-      }
-
-      // Reload full message list to get both persisted user msg and assistant reply
-      const refreshed = await apiClient.get<Message[]>(`/chats/${activeChatId}/messages`);
-      setMessages(refreshed.data);
-      
-      // Reload threads list to fetch updated titles and ordering
-      const threadsRes = await apiClient.get<ChatThread[]>('/chats');
-      setChats(threadsRes.data);
-    } catch (err) {
-      console.error(err);
-      setMessages((prev) => [
-        ...prev.filter(m => m.id !== tempId),
-        { ...tempUserMsg, id: Date.now() },
-        {
-          id: Date.now() + 1,
-          chat_id: activeChatId,
-          role: 'assistant',
-          content: '⚠️ Failed to get agent response. Please check your API key configuration.',
-          created_at: new Date().toISOString()
-        }
-      ]);
-    } finally {
-      setSending(false);
+    if (activeMode) {
+      await runWorkflowStream('/actions/run/stream', {
+        chat_id: activeChatId,
+        mode: activeMode,
+        message: text
+      }, tempUserMsg);
+    } else {
+      await runWorkflowStream(`/chats/${activeChatId}/messages/stream`, {
+        content: text
+      }, tempUserMsg);
     }
   };
 
@@ -399,32 +569,11 @@ export const Chat: React.FC = () => {
     };
     setMessages((prev) => [...prev, tempUserMsg]);
 
-    try {
-      await apiClient.post('/actions/run', {
-        chat_id: activeChatId,
-        mode,
-        message,
-      });
-      const refreshed = await apiClient.get<Message[]>(`/chats/${activeChatId}/messages`);
-      setMessages(refreshed.data);
-      const threadsRes = await apiClient.get<ChatThread[]>('/chats');
-      setChats(threadsRes.data);
-    } catch (err) {
-      console.error(err);
-      setMessages((prev) => [
-        ...prev.filter((m) => m.id !== tempId),
-        { ...tempUserMsg, id: Date.now() },
-        {
-          id: Date.now() + 1,
-          chat_id: activeChatId,
-          role: 'assistant',
-          content: '⚠️ Action execution failed. Please verify your API key configuration.',
-          created_at: new Date().toISOString(),
-        },
-      ]);
-    } finally {
-      setSending(false);
-    }
+    await runWorkflowStream('/actions/run/stream', {
+      chat_id: activeChatId,
+      mode,
+      message,
+    }, tempUserMsg);
   };
 
   const handleLogout = () => {
@@ -437,19 +586,54 @@ export const Chat: React.FC = () => {
   }
 
   return (
-    <AppLayout
-      userEmail={userEmail}
-      chats={chats}
-      activeChatId={activeChatId}
-      onSelectChat={(id) => {
-        setActiveChatId(id);
-        setShowMemorySettings(false);
-      }}
-      onCreateChat={() => handleCreateChat()}
-      onDeleteChat={handleDeleteChat}
-      onOpenMemorySettings={() => setShowMemorySettings(true)}
-      onLogout={handleLogout}
-    >
+    <>
+      {/* Global Toast Notifications — positioned top-right, above everything */}
+      <div
+        style={{
+          position: 'fixed',
+          top: '16px',
+          right: '16px',
+          zIndex: 9999,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+          maxWidth: '360px',
+          width: 'calc(100% - 32px)',
+          pointerEvents: 'none',
+        }}
+      >
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`toast-card toast-${toast.type} animate-fade-in`}
+            style={{ pointerEvents: 'auto' }}
+          >
+            <span className="toast-text">{toast.message}</span>
+            <button
+              className="toast-close-btn"
+              onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+              aria-label="Dismiss notification"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <AppLayout
+        userEmail={userEmail}
+        chats={chats}
+        activeChatId={activeChatId}
+        creatingChat={creatingChat}
+        onSelectChat={(id) => {
+          setActiveChatId(id);
+          setShowMemorySettings(false);
+        }}
+        onCreateChat={() => handleCreateChat()}
+        onDeleteChat={handleDeleteChat}
+        onOpenMemorySettings={() => setShowMemorySettings(true)}
+        onLogout={handleLogout}
+      >
       {showMemorySettings ? (
         <MemoryManager onBackToChat={() => setShowMemorySettings(false)} />
       ) : activeChatId === null ? (
@@ -535,42 +719,9 @@ export const Chat: React.FC = () => {
                     {msg.role === 'user' ? 'U' : 'AI'}
                   </div>
                   <div className="message-body-content">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        // Custom link renderer: citation links like [[1]](url) become
-                        // superscript badge numbers; all other links open in new tab.
-                        a: ({ href, children }) => {
-                          const text = String(children ?? '');
-                          // A citation link has text matching [N]
-                          const citationMatch = text.match(/^\[(\d+)\]$/);
-                          if (citationMatch && href) {
-                            return (
-                              <a
-                                href={href}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="citation-superscript"
-                                title={`Source ${citationMatch[1]}: ${href}`}
-                              >
-                                {citationMatch[1]}
-                              </a>
-                            );
-                          }
-                          return (
-                            <a href={href} target="_blank" rel="noopener noreferrer">
-                              {children}
-                            </a>
-                          );
-                        },
-                      }}
-                    >
-                      {msg.role === 'assistant' && msg.metadata_json?.sources
-                        ? processCitationLinks(msg.content, msg.metadata_json.sources)
-                        : msg.content}
-                    </ReactMarkdown>
-
-                    {/* ChatGPT-style numbered footnotes */}
+                    {msg.role === 'assistant'
+                      ? renderMarkdown(msg.content, msg.metadata_json?.sources)
+                      : <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>}
                     {msg.role === 'assistant' && msg.metadata_json?.sources && msg.metadata_json.sources.length > 0 && (
                       <div className="citations-footnotes">
                         <div className="citations-footnotes-header">
@@ -603,15 +754,93 @@ export const Chat: React.FC = () => {
               ))
             )}
 
-            {/* Spinner indicator when agent is processing */}
+            {/* Streaming assistant response bubble */}
             {sending && (
-              <div className="message-card message-assistant">
+              <div className="message-card message-assistant animate-fade-in">
                 <div className="avatar-badge avatar-badge-assistant">AI</div>
-                <div className="message-body-content" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Spinner size="sm" />
-                  <span className="spinner-text" style={{ fontStyle: 'italic' }}>
-                    Agent routing & evaluating validation criteria...
-                  </span>
+                <div className="message-body-content" style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%' }}>
+                  
+                  {/* Collapsible thoughts list — auto-collapses when content begins streaming */}
+                  {streamingThoughts.length > 0 ? (
+                    <details className="agent-thoughts-details" open={!contentStarted} style={{ width: '100%' }}>
+                      <summary className="agent-thoughts-summary">
+                        <Brain size={14} className={contentStarted ? '' : 'spin-icon'} style={{ color: 'var(--accent-purple)' }} />
+                        <span>Agent Thinking Steps ({streamingThoughts.length})</span>
+                        {contentStarted && (
+                          <span style={{
+                            marginLeft: 'auto',
+                            fontSize: '10px',
+                            color: 'var(--text-muted)',
+                            fontWeight: 400
+                          }}>click to expand</span>
+                        )}
+                      </summary>
+                      <div className="agent-thoughts-list">
+                        {streamingThoughts.map((thought, idx) => (
+                          <div key={idx} className="agent-thought-step">
+                            <span className="agent-thought-bullet">✓</span>
+                            <span className="agent-thought-text">{thought}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Spinner size="sm" />
+                      <span className="spinner-text" style={{ fontStyle: 'italic' }}>
+                        Initializing multi-agent workflow...
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Main streaming content area — single seamless view like ChatGPT/Perplexity */}
+                  {(activeContent || isRefining) && (
+                    <div className="active-draft-container animate-fade-in">
+                      {/* Subtle attempt/refining header — only shown when actively composing */}
+                      <div className="active-draft-header" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Sparkles size={12} className="spin-icon" />
+                        {isRefining ? (
+                          <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Refining response...</span>
+                        ) : attemptNumber > 1 ? (
+                          <span>Composing improved draft...</span>
+                        ) : (
+                          <span>Composing response...</span>
+                        )}
+                      </div>
+                      <div className="streaming-markdown-content">
+                        {renderMarkdown(activeContent, streamingSources)}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ChatGPT-style source footnotes — appear below streaming content */}
+                  {streamingSources.length > 0 && (
+                    <div className="citations-footnotes" style={{ marginTop: '8px' }}>
+                      <div className="citations-footnotes-header">
+                        <ExternalLink size={12} />
+                        <span>Sources</span>
+                      </div>
+                      <div className="citations-footnotes-list">
+                        {streamingSources.map((src, sIdx) => (
+                          <a
+                            key={sIdx}
+                            href={src.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="citation-footnote-row"
+                            title={src.snippet}
+                          >
+                            <span className="citation-footnote-number">{sIdx + 1}</span>
+                            <span className="citation-footnote-text">
+                              <span className="citation-footnote-title">{src.title || getDomain(src.link)}</span>
+                              <span className="citation-footnote-domain">{getDomain(src.link)}</span>
+                            </span>
+                            <ExternalLink size={11} className="citation-footnote-icon" />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -701,6 +930,7 @@ export const Chat: React.FC = () => {
         </div>
       )}
     </AppLayout>
+    </>
   );
 };
 export default Chat;
