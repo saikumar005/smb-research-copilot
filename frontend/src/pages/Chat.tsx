@@ -88,14 +88,85 @@ function processCitationLinks(content: string, sources: Source[]): string {
   return processed;
 }
 
-/** Extract a short readable domain name from a URL for display in footnotes */
+/** Extract a short readable domain name from a URL.
+ * Strips www. and common subdomains like en. m. for cleaner badge display. */
 function getDomain(url: string): string {
   try {
-    return new URL(url).hostname.replace(/^www\./, '');
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    // Strip single-letter subdomains like en. m. fr. etc.
+    return host.replace(/^[a-z]{1,2}\./, '');
   } catch {
     return url;
   }
 }
+
+/** Perplexity-style inline citation badge with hover popover */
+const CitationBadge: React.FC<{
+  num: string;
+  source?: Source;
+  href: string;
+}> = ({ num, source, href }) => {
+  const [hovered, setHovered] = React.useState(false);
+  const domain = source ? getDomain(source.link) : href;
+
+  return (
+    <span
+      className="citation-badge-wrapper"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="citation-badge"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className="citation-badge-num">{num}</span>
+        <span className="citation-badge-domain">{domain}</span>
+      </a>
+      {hovered && source && (
+        <div className="citation-popover">
+          <div className="citation-popover-title">{source.title || domain}</div>
+          {source.snippet && (
+            <div className="citation-popover-snippet">
+              {source.snippet.length > 130 ? source.snippet.slice(0, 130) + '…' : source.snippet}
+            </div>
+          )}
+          <div className="citation-popover-link">{domain}</div>
+        </div>
+      )}
+    </span>
+  );
+};
+
+/** Compact collapsible sources toggle (replaces old SOURCES block) */
+const SourcesToggle: React.FC<{ sources: Source[] }> = ({ sources }) => {
+  if (!sources || sources.length === 0) return null;
+  return (
+    <details className="sources-toggle">
+      <summary className="sources-toggle-summary">
+        <ExternalLink size={10} />
+        {sources.length} source{sources.length !== 1 ? 's' : ''}
+      </summary>
+      <div className="sources-toggle-list">
+        {sources.map((src, i) => (
+          <a
+            key={i}
+            href={src.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="sources-toggle-row"
+          >
+            <span className="sources-toggle-num">{i + 1}</span>
+            <span className="sources-toggle-title">{src.title || getDomain(src.link)}</span>
+            <span className="sources-toggle-domain">{getDomain(src.link)}</span>
+          </a>
+        ))}
+      </div>
+    </details>
+  );
+};
 
 export const Chat: React.FC = () => {
   const [userEmail, setUserEmail] = useState('');
@@ -142,17 +213,10 @@ export const Chat: React.FC = () => {
             const text = String(children ?? '');
             const citationMatch = text.match(/^\[(\d+)\]$/);
             if (citationMatch && href) {
-              return (
-                <a
-                  href={href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="citation-superscript"
-                  title={`Source ${citationMatch[1]}: ${href}`}
-                >
-                  {citationMatch[1]}
-                </a>
-              );
+              // Render as Perplexity-style inline source pill with hover popover
+              const idx = parseInt(citationMatch[1], 10) - 1;
+              const source = sources[idx];
+              return <CitationBadge num={citationMatch[1]} source={source} href={href} />;
             }
             return (
               <a href={href} target="_blank" rel="noopener noreferrer">
@@ -722,32 +786,9 @@ export const Chat: React.FC = () => {
                     {msg.role === 'assistant'
                       ? renderMarkdown(msg.content, msg.metadata_json?.sources)
                       : <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>}
-                    {msg.role === 'assistant' && msg.metadata_json?.sources && msg.metadata_json.sources.length > 0 && (
-                      <div className="citations-footnotes">
-                        <div className="citations-footnotes-header">
-                          <ExternalLink size={12} />
-                          <span>Sources</span>
-                        </div>
-                        <div className="citations-footnotes-list">
-                          {msg.metadata_json.sources.map((src, sIdx) => (
-                            <a
-                              key={sIdx}
-                              href={src.link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="citation-footnote-row"
-                              title={src.snippet}
-                            >
-                              <span className="citation-footnote-number">{sIdx + 1}</span>
-                              <span className="citation-footnote-text">
-                                <span className="citation-footnote-title">{src.title || getDomain(src.link)}</span>
-                                <span className="citation-footnote-domain">{getDomain(src.link)}</span>
-                              </span>
-                              <ExternalLink size={11} className="citation-footnote-icon" />
-                            </a>
-                          ))}
-                        </div>
-                      </div>
+                    {/* Compact collapsible sources toggle — replaces old numbered SOURCES block */}
+                    {msg.role === 'assistant' && msg.metadata_json?.sources && (
+                      <SourcesToggle sources={msg.metadata_json.sources} />
                     )}
                   </div>
                 </div>
@@ -813,33 +854,9 @@ export const Chat: React.FC = () => {
                     </div>
                   )}
 
-                  {/* ChatGPT-style source footnotes — appear below streaming content */}
+                  {/* Compact collapsible sources toggle — shown after streaming completes */}
                   {streamingSources.length > 0 && (
-                    <div className="citations-footnotes" style={{ marginTop: '8px' }}>
-                      <div className="citations-footnotes-header">
-                        <ExternalLink size={12} />
-                        <span>Sources</span>
-                      </div>
-                      <div className="citations-footnotes-list">
-                        {streamingSources.map((src, sIdx) => (
-                          <a
-                            key={sIdx}
-                            href={src.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="citation-footnote-row"
-                            title={src.snippet}
-                          >
-                            <span className="citation-footnote-number">{sIdx + 1}</span>
-                            <span className="citation-footnote-text">
-                              <span className="citation-footnote-title">{src.title || getDomain(src.link)}</span>
-                              <span className="citation-footnote-domain">{getDomain(src.link)}</span>
-                            </span>
-                            <ExternalLink size={11} className="citation-footnote-icon" />
-                          </a>
-                        ))}
-                      </div>
-                    </div>
+                    <SourcesToggle sources={streamingSources} />
                   )}
                 </div>
               </div>
