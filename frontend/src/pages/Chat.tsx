@@ -42,52 +42,45 @@ interface Message {
   created_at: string;
 }
 
+/** Helper to extract plain text string from any nested ReactNode children. */
+const getChildrenText = (node: any): string => {
+  if (node == null) return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(getChildrenText).join('');
+  if (node.props && node.props.children) return getChildrenText(node.props.children);
+  return '';
+};
+
 /**
  * Rewrites citation references in AI response text into clickable markdown links.
  * Handles: (Source 1), (Source 2), [1], [2], Source 1, Source 2
  * Converts them to [[1]](url) which ReactMarkdown renders as a link.
+ * Performs a single-pass regex replacement, skipping already-formatted links to prevent double-wrapping.
  */
 function processCitationLinks(content: string, sources: Source[]): string {
   if (!sources || sources.length === 0) return content;
 
-  let processed = content;
+  // Single-pass regex to match:
+  // 1. Existing [[N]](url) or [N](url) links (so we can skip them)
+  // 2. Various unlinked citation formats: [Source N], (Source N), Source [N], [N], Source N
+  const regex = /\[\[\d+\]\]\([^)]+\)|\[\d+\]\([^)]+\)|(?:Source\s+)?\[(?:Source\s+)?(\d+)\]|\(Source\s+(\d+)\)|\[(\d+)\](?!\()|\bSource\s+(\d+)\b/gi;
 
-  // 1. Replace "Source [N]" or "[Source N]" or "(Source N)"
-  processed = processed.replace(/(?:Source\s+)?\[(?:Source\s+)?(\d+)\]/gi, (_, num) => {
-    const idx = parseInt(num, 10) - 1;
-    if (idx >= 0 && idx < sources.length) {
-      return `[[${num}]](${sources[idx].link})`;
+  return content.replace(regex, (match, p1, p2, p3, p4) => {
+    // If it's already a markdown link, keep it exactly as-is
+    if (match.startsWith('[') && match.includes('](')) {
+      return match;
     }
-    return `[${num}]`;
-  });
 
-  processed = processed.replace(/\(Source\s+(\d+)\)/gi, (_, num) => {
-    const idx = parseInt(num, 10) - 1;
-    if (idx >= 0 && idx < sources.length) {
-      return `[[${num}]](${sources[idx].link})`;
+    // Extract citation number from whichever capture group matched
+    const num = p1 || p2 || p3 || p4;
+    if (num) {
+      const idx = parseInt(num, 10) - 1;
+      if (idx >= 0 && idx < sources.length) {
+        return `[${num}](${sources[idx].link})`;
+      }
     }
-    return `(Source ${num})`;
+    return match;
   });
-
-  // 2. Replace bare [N] that are NOT already part of a markdown link [text](url)
-  processed = processed.replace(/\[(\d+)\](?!\()/g, (_, num) => {
-    const idx = parseInt(num, 10) - 1;
-    if (idx >= 0 && idx < sources.length) {
-      return `[[${num}]](${sources[idx].link})`;
-    }
-    return `[${num}]`;
-  });
-
-  // 3. Replace "Source N" (case-insensitive) when it is a separate word
-  processed = processed.replace(/\bSource\s+(\d+)\b/gi, (_, num) => {
-    const idx = parseInt(num, 10) - 1;
-    if (idx >= 0 && idx < sources.length) {
-      return `[[${num}]](${sources[idx].link})`;
-    }
-    return `Source ${num}`;
-  });
-
-  return processed;
 }
 
 /** Extract a short readable domain name from a URL.
@@ -234,8 +227,8 @@ export const Chat: React.FC = () => {
         remarkPlugins={[remarkGfm]}
         components={{
           a: ({ href, children }) => {
-            const text = String(children ?? '');
-            const citationMatch = text.match(/^\[(\d+)\]$/);
+            const text = getChildrenText(children);
+            const citationMatch = text.match(/^\[?(\d+)\]?$/);
             if (citationMatch && href) {
               // Render as Perplexity-style inline source pill with hover popover
               const idx = parseInt(citationMatch[1], 10) - 1;
