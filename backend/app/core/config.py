@@ -39,6 +39,10 @@ class Settings(BaseSettings):
         default="",
         validation_alias="SERPER_API_KEY"
     )
+    COMPOSIO_API_KEY: str = Field(
+        default="",
+        validation_alias="COMPOSIO_API_KEY"
+    )
     # Google OAuth 2.0 — used to verify id_tokens from the GIS popup flow
     GOOGLE_CLIENT_ID: str = Field(
         default="",
@@ -62,6 +66,12 @@ class Settings(BaseSettings):
     LANGFUSE_HOST: str = Field(
         default="https://cloud.langfuse.com",
         validation_alias=AliasChoices("LANGFUSE_HOST", "LANGFUSE_BASE_URL")
+    )
+    
+    # Toggle JSON Structured Logging (e.g. True in production)
+    LOG_JSON: bool = Field(
+        default=False,
+        validation_alias="LOG_JSON"
     )
 
 

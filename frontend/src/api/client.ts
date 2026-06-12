@@ -44,3 +44,27 @@ export function logger_session_expiry() {
     window.location.href = '/login?expired=true';
   }
 }
+
+// ── Gmail Integration API ────────────────────────────────────────────────────
+
+/** Check whether the current user has an active Gmail connection via Composio */
+export const getGmailStatus = (): Promise<{ connected: boolean }> =>
+  apiClient.get('/integrations/gmail/status').then(r => r.data);
+
+/** Get the OAuth redirect URL to connect Gmail via Composio */
+export const getGmailConnectUrl = (): Promise<{ redirect_url: string }> =>
+  apiClient.get('/integrations/gmail/connect').then(r => r.data);
+
+/** Parse an LLM email draft into structured { subject, body } fields */
+export const parseDraft = (draft: string): Promise<{ subject: string; body: string }> =>
+  apiClient.post('/integrations/gmail/parse-draft', { draft }).then(r => r.data);
+
+/** Send an email from the user's connected Gmail account */
+export const sendGmailEmail = (payload: {
+  to: string;
+  subject: string;
+  body: string;
+  cc?: string;
+}): Promise<{ success: boolean; message: string }> =>
+  apiClient.post('/integrations/gmail/send', payload).then(r => r.data);
+

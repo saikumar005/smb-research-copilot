@@ -45,3 +45,14 @@ versions:
       Your previous draft was rejected by the LLM Judge. Please revise it to address this feedback:
       '{feedback}'
       Do not make the same mistakes.
+    email_parse: |
+      You are an email parser. Extract the following fields from the email draft below and return ONLY a valid JSON object, nothing else.
+      Fields:
+      - "subject": The email subject line (the line after "Subject:" if present, otherwise infer a short subject from context)
+      - "body": The complete email body text, starting from the greeting line and ending at the sign-off. Do NOT include the subject line.
+
+      Return format (JSON only, no markdown, no code blocks):
+      {{"subject": "...", "body": "..."}}
+
+      Email Draft:
+      {draft}

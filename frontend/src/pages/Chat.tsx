@@ -10,9 +10,11 @@ import {
   CheckSquare, 
   Brain, 
   ExternalLink, 
-  Sparkles
+  Sparkles,
+  X,
+  Loader2,
 } from 'lucide-react';
-import { apiClient, logger_session_expiry } from '../api/client';
+import { apiClient, logger_session_expiry, getGmailStatus, getGmailConnectUrl, parseDraft, sendGmailEmail } from '../api/client';
 import { AppLayout } from '../components/layout/AppLayout';
 import { Spinner } from '../components/ui/Spinner';
 import { MemoryManager } from '../components/memory/MemoryManager';
@@ -202,6 +204,28 @@ export const Chat: React.FC = () => {
   const [isRefining, setIsRefining] = useState<boolean>(false);
   // Whether streaming content has started (controls thoughts accordion open state)
   const [contentStarted, setContentStarted] = useState<boolean>(false);
+
+  // ── Gmail integration state ───────────────────────────────────────────────
+  const [gmailConnected, setGmailConnected] = useState(false);
+  const [sendModal, setSendModal] = useState<{
+    open: boolean;
+    draft: string;
+    subject: string;
+    body: string;
+    to: string;
+    cc: string;
+    loading: boolean;
+    parsing: boolean;
+  }>({
+    open: false,
+    draft: '',
+    subject: '',
+    body: '',
+    to: '',
+    cc: '',
+    loading: false,
+    parsing: false,
+  });
   
   const renderMarkdown = (content: string, sources: Source[] = []) => {
     const processed = processCitationLinks(content, sources);
@@ -645,6 +669,62 @@ export const Chat: React.FC = () => {
     navigate('/login');
   };
 
+  // ── Gmail handlers ────────────────────────────────────────────────────────
+
+  /** Open the OAuth popup to connect Gmail via Composio */
+  const handleConnectGmail = async () => {
+    try {
+      const { redirect_url } = await getGmailConnectUrl();
+      // Open in a popup; after OAuth, Composio redirects to their success page
+      const popup = window.open(redirect_url, 'gmail-oauth', 'width=600,height=700');
+      // Poll until the popup closes, then re-check connection status
+      const interval = setInterval(async () => {
+        if (!popup || popup.closed) {
+          clearInterval(interval);
+          const { connected } = await getGmailStatus();
+          setGmailConnected(connected);
+          if (connected) showToast('Gmail connected successfully! ✓', 'success');
+        }
+      }, 1000);
+    } catch (err) {
+      showToast('Failed to start Gmail connection. Check that COMPOSIO_API_KEY is set.', 'error');
+    }
+  };
+
+  /** Open the Send modal for an email_draft message */
+  const handleOpenSendModal = async (msg: Message) => {
+    setSendModal(prev => ({ ...prev, open: true, draft: msg.content, subject: '', body: '', to: '', cc: '', parsing: true, loading: false }));
+    try {
+      const { subject, body } = await parseDraft(msg.content);
+      setSendModal(prev => ({ ...prev, subject, body, parsing: false }));
+    } catch {
+      setSendModal(prev => ({ ...prev, subject: 'Outreach Email', body: msg.content, parsing: false }));
+    }
+  };
+
+  /** Execute the send via Composio GMAIL_SEND_EMAIL */
+  const handleSendGmail = async () => {
+    if (!sendModal.to) {
+      showToast('Please enter a recipient email address.', 'error');
+      return;
+    }
+    setSendModal(prev => ({ ...prev, loading: true }));
+    try {
+      const result = await sendGmailEmail({
+        to: sendModal.to,
+        subject: sendModal.subject,
+        body: sendModal.body,
+        cc: sendModal.cc || undefined,
+      });
+      setSendModal(prev => ({ ...prev, open: false, loading: false }));
+      showToast(`✓ ${result.message || 'Email sent successfully!'}`, 'success');
+    } catch (err: any) {
+      setSendModal(prev => ({ ...prev, loading: false }));
+      const detail = err?.response?.data?.detail || 'Failed to send email.';
+      showToast(detail, 'error');
+    }
+  };
+
   if (loadingApp) {
     return <Spinner fullScreen />;
   }
@@ -684,6 +764,101 @@ export const Chat: React.FC = () => {
         ))}
       </div>
 
+      {/* ── Send via Gmail Modal ──────────────────────────────────────────── */}
+      {sendModal.open && (
+        <div className="send-email-modal-overlay" onClick={() => setSendModal(prev => ({ ...prev, open: false }))}>
+          <div className="send-email-modal" onClick={e => e.stopPropagation()}>
+            <div className="send-email-modal-header">
+              <div className="send-email-modal-title">
+                <Mail size={16} style={{ color: 'var(--accent-purple)' }} />
+                Send Email via Gmail
+              </div>
+              <button
+                className="send-email-modal-close"
+                onClick={() => setSendModal(prev => ({ ...prev, open: false }))}
+                aria-label="Close"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {sendModal.parsing ? (
+              <div className="send-email-modal-parsing">
+                <Loader2 size={20} className="spin-icon" style={{ color: 'var(--accent-purple)' }} />
+                <span>Parsing email draft…</span>
+              </div>
+            ) : (
+              <div className="send-email-modal-body">
+                <div className="send-email-field">
+                  <label className="send-email-label">To *</label>
+                  <input
+                    id="gmail-to"
+                    type="email"
+                    className="send-email-input"
+                    placeholder="recipient@company.com"
+                    value={sendModal.to}
+                    onChange={e => setSendModal(prev => ({ ...prev, to: e.target.value }))}
+                    autoFocus
+                  />
+                </div>
+                <div className="send-email-field">
+                  <label className="send-email-label">CC</label>
+                  <input
+                    id="gmail-cc"
+                    type="email"
+                    className="send-email-input"
+                    placeholder="cc@company.com (optional)"
+                    value={sendModal.cc}
+                    onChange={e => setSendModal(prev => ({ ...prev, cc: e.target.value }))}
+                  />
+                </div>
+                <div className="send-email-field">
+                  <label className="send-email-label">Subject</label>
+                  <input
+                    id="gmail-subject"
+                    type="text"
+                    className="send-email-input"
+                    value={sendModal.subject}
+                    onChange={e => setSendModal(prev => ({ ...prev, subject: e.target.value }))}
+                  />
+                </div>
+                <div className="send-email-field">
+                  <label className="send-email-label">Body</label>
+                  <textarea
+                    id="gmail-body"
+                    className="send-email-textarea"
+                    rows={10}
+                    value={sendModal.body}
+                    onChange={e => setSendModal(prev => ({ ...prev, body: e.target.value }))}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="send-email-modal-footer">
+              <button
+                className="send-email-cancel-btn"
+                onClick={() => setSendModal(prev => ({ ...prev, open: false }))}
+                disabled={sendModal.loading}
+              >
+                Cancel
+              </button>
+              <button
+                className="send-email-send-btn"
+                onClick={handleSendGmail}
+                disabled={sendModal.loading || sendModal.parsing || !sendModal.to}
+              >
+                {sendModal.loading ? (
+                  <><Loader2 size={14} className="spin-icon" /> Sending…</>
+                ) : (
+                  <><Mail size={14} /> Send Email</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <AppLayout
         userEmail={userEmail}
         chats={chats}
@@ -697,6 +872,8 @@ export const Chat: React.FC = () => {
         onDeleteChat={handleDeleteChat}
         onOpenMemorySettings={() => setShowMemorySettings(true)}
         onLogout={handleLogout}
+        gmailConnected={gmailConnected}
+        onConnectGmail={handleConnectGmail}
       >
       {showMemorySettings ? (
         <MemoryManager onBackToChat={() => setShowMemorySettings(false)} />
@@ -789,6 +966,30 @@ export const Chat: React.FC = () => {
                     {/* Compact collapsible sources toggle — replaces old numbered SOURCES block */}
                     {msg.role === 'assistant' && msg.metadata_json?.sources && (
                       <SourcesToggle sources={msg.metadata_json.sources} />
+                    )}
+                    {/* Send via Gmail button — only on email_draft messages */}
+                    {msg.role === 'assistant' && msg.metadata_json?.action_mode === 'email_draft' && (
+                      <div className="send-gmail-action-row">
+                        {gmailConnected ? (
+                          <button
+                            className="send-gmail-btn"
+                            onClick={() => handleOpenSendModal(msg)}
+                            title="Send this email via your connected Gmail account"
+                          >
+                            <Mail size={13} />
+                            Send via Gmail
+                          </button>
+                        ) : (
+                          <button
+                            className="send-gmail-btn send-gmail-btn-connect"
+                            onClick={handleConnectGmail}
+                            title="Connect Gmail to send this email"
+                          >
+                            <Mail size={13} />
+                            Connect Gmail to Send
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>

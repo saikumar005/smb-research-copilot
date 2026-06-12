@@ -1453,3 +1453,280 @@ button, input, textarea {
   opacity: 0.8;
 }
 
+/* ── Gmail Sidebar Status Badge ── */
+.gmail-status-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-color);
+  transition: background 0.15s ease, border-color 0.15s ease;
+  cursor: default;
+  text-decoration: none;
+  background: transparent;
+  color: inherit;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.gmail-status-connected {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.25);
+  background: rgba(74, 222, 128, 0.06);
+}
+
+.gmail-connected-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.6);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.gmail-status-disconnected {
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.gmail-status-disconnected:hover {
+  background: rgba(139, 92, 246, 0.08);
+  border-color: rgba(139, 92, 246, 0.3);
+  color: var(--accent-purple);
+}
+
+/* ── Send via Gmail action row (below email_draft messages) ── */
+.send-gmail-action-row {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.send-gmail-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  background: rgba(139, 92, 246, 0.10);
+  color: var(--accent-purple);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.send-gmail-btn:hover {
+  background: rgba(139, 92, 246, 0.20);
+  border-color: rgba(139, 92, 246, 0.55);
+  transform: translateY(-1px);
+}
+
+.send-gmail-btn:active {
+  transform: translateY(0);
+}
+
+.send-gmail-btn-connect {
+  border-color: rgba(99, 102, 241, 0.3);
+  background: rgba(99, 102, 241, 0.07);
+  color: var(--accent-indigo, #6366f1);
+  font-weight: 500;
+}
+
+.send-gmail-btn-connect:hover {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: rgba(99, 102, 241, 0.5);
+}
+
+/* ── Send Email Modal ── */
+.send-email-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.60);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.15s ease;
+}
+
+.send-email-modal {
+  background: var(--bg-secondary, #160d25);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 560px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideUp 0.18s ease;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.send-email-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.send-email-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.send-email-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.send-email-modal-close:hover {
+  background: rgba(255,255,255,0.06);
+  color: var(--text-primary);
+}
+
+.send-email-modal-parsing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.send-email-modal-body {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.send-email-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.send-email-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.send-email-input {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s ease;
+  font-family: var(--font-body);
+}
+
+.send-email-input:focus {
+  border-color: rgba(139, 92, 246, 0.5);
+  background: rgba(139, 92, 246, 0.04);
+}
+
+.send-email-textarea {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  outline: none;
+  resize: vertical;
+  line-height: 1.55;
+  font-family: var(--font-body);
+  transition: border-color 0.15s ease;
+}
+
+.send-email-textarea:focus {
+  border-color: rgba(139, 92, 246, 0.5);
+  background: rgba(139, 92, 246, 0.04);
+}
+
+.send-email-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border-color);
+}
+
+.send-email-cancel-btn {
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.send-email-cancel-btn:hover:not(:disabled) {
+  background: rgba(255,255,255,0.04);
+  color: var(--text-secondary);
+}
+
+.send-email-send-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  background: rgba(139, 92, 246, 0.15);
+  color: var(--accent-purple);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.send-email-send-btn:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.28);
+  border-color: rgba(139, 92, 246, 0.6);
+}
+
+.send-email-send-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

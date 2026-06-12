@@ -6,13 +6,35 @@ from app.core.config import settings
 from app.core.middleware import AuthMiddleware
 from app.api.v1.router import api_router
 
-# Configure basic logging format
+import json
+import sys
+
+# Configure structured JSON or console logging format
+class JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        log_data = {
+            "timestamp": self.formatTime(record, self.datefmt),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            log_data["exception"] = self.formatException(record.exc_info)
+        return json.dumps(log_data)
+
+log_handler = logging.StreamHandler(sys.stdout)
+if settings.LOG_JSON:
+    log_handler.setFormatter(JsonFormatter())
+else:
+    log_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler()]
+    handlers=[log_handler],
+    force=True
 )
 logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

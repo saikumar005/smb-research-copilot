@@ -25,5 +25,6 @@ COPY . .
 # Expose FastAPI's default port
 EXPOSE 8000
 
-# Start Uvicorn with auto-reload for development
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Start Gunicorn with Uvicorn workers for production-grade performance
+CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000"]
+

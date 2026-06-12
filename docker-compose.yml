@@ -26,7 +26,11 @@ services:
       - MEMORI_API_KEY=${MEMORI_API_KEY}
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
-      - LANGFUSE_HOST=${LANGFUSE_HOST}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-${LANGFUSE_BASE_URL}}
+      - COMPOSIO_API_KEY=${COMPOSIO_API_KEY}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - FRONTEND_ORIGIN=${FRONTEND_ORIGIN:-http://localhost:5173}
+      - LOG_JSON=${LOG_JSON:-false}
     ports:
       - "8000:8000"
     volumes:
@@ -35,16 +39,15 @@ services:
       - db
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        - VITE_API_URL=http://localhost:8000/api/v1
+        - VITE_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
     container_name: research_copilot_frontend
     restart: always
-    environment:
-      - VITE_API_URL=http://localhost:8000/api/v1
     ports:
-      - "5173:5173"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      - "5173:80"
     depends_on:
       - backend
 

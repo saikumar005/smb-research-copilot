@@ -1,5 +1,5 @@
 import React from 'react';
-import { LogOut, Brain, MessageSquare, Plus, Settings, Loader2 } from 'lucide-react';
+import { LogOut, Brain, MessageSquare, Plus, Settings, Loader2, Mail } from 'lucide-react';
 
 interface ChatThread {
   id: number;
@@ -17,6 +17,8 @@ interface AppLayoutProps {
   onDeleteChat?: (id: number) => void;
   onOpenMemorySettings: () => void;
   onLogout: () => void;
+  gmailConnected?: boolean;
+  onConnectGmail?: () => void;
 }
 
 export const AppLayout: React.FC<AppLayoutProps> = ({
@@ -29,6 +31,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   onCreateChat,
   onOpenMemorySettings,
   onLogout,
+  gmailConnected = false,
+  onConnectGmail,
 }) => {
   return (
     <div className="app-container">
@@ -84,6 +88,20 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             <Settings size={16} />
             <span>Manage Memory</span>
           </button>
+
+          {/* Gmail Connection Status */}
+          {gmailConnected ? (
+            <div className="gmail-status-badge gmail-status-connected">
+              <Mail size={13} />
+              <span>Gmail Connected</span>
+              <span className="gmail-connected-dot" />
+            </div>
+          ) : (
+            <button className="gmail-status-badge gmail-status-disconnected" onClick={onConnectGmail}>
+              <Mail size={13} />
+              <span>Connect Gmail</span>
+            </button>
+          )}
 
           <div className="user-profile-badge">
             <span className="user-initial">{userEmail[0]?.toUpperCase()}</span>

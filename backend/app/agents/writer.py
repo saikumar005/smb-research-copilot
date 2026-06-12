@@ -15,6 +15,9 @@ api_key = settings.GEMINI_API_KEY
 if not api_key or api_key.startswith("your-"):
     api_key = settings.OPENAI_API_KEY
 
+if not api_key:
+    api_key = "dummy-api-key"
+
 openai_client = OpenAI(
     api_key=api_key,
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"

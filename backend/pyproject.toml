@@ -23,6 +23,9 @@ dependencies = [
     "langchain-openai>=0.1.9",
     "langgraph>=0.1.4",
     "memori>=0.1.18",
+    "composio-langchain>=0.7.0",
+    "gunicorn>=22.0.0",
+    "google-auth>=2.29.0",
     "pytest>=8.2.2"
 ]
 
