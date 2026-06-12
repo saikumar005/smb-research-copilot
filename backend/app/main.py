@@ -93,10 +93,23 @@ app.add_middleware(AuthMiddleware)
 # and append CORS headers to all responses.
 # In production, replace allow_origins with your real domain list.
 # ---------------------------------------------------------------------------
+from urllib.parse import urlparse
+
+def get_clean_origin(origin_str: str) -> str:
+    try:
+        parsed = urlparse(origin_str.strip())
+        if parsed.scheme and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}"
+    except Exception:
+        pass
+    return origin_str.strip().rstrip("/")
+
+clean_frontend_origin = get_clean_origin(settings.FRONTEND_ORIGIN)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        settings.FRONTEND_ORIGIN,          # e.g. http://localhost:5173 or prod URL
+        clean_frontend_origin,             # Cleaned production URL
         "http://localhost:5173",           # Vite dev server
         "http://127.0.0.1:5173",
     ],
