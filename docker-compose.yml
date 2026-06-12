@@ -28,7 +28,7 @@ services:
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
       - LANGFUSE_HOST=${LANGFUSE_HOST:-${LANGFUSE_BASE_URL}}
       - COMPOSIO_API_KEY=${COMPOSIO_API_KEY}
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-1086927108795-d8gh931h0redgqtpt4ve3qmglekot2dq.apps.googleusercontent.com}
       - FRONTEND_ORIGIN=${FRONTEND_ORIGIN:-http://localhost:5173}
       - LOG_JSON=${LOG_JSON:-false}
     ports:
@@ -43,7 +43,7 @@ services:
       context: ./frontend
       args:
         - VITE_API_URL=http://localhost:8000/api/v1
-        - VITE_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+        - VITE_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-1086927108795-d8gh931h0redgqtpt4ve3qmglekot2dq.apps.googleusercontent.com}
     container_name: research_copilot_frontend
     restart: always
     ports:

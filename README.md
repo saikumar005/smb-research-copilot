@@ -207,6 +207,43 @@ npm install
 npm run dev
 ```
 
+---
+
+## Deployment to Render
+
+This project includes a `render.yaml` Blueprint specification at the root of the repository to make deployment to [Render](https://render.com) simple. Because Render does not natively support `docker-compose.yml` for multi-container orchestration, a Render Blueprint is the recommended way to programmatically provision and wire up the database, backend, and frontend.
+
+### Option A: One-Click Deploy using the Render Blueprint (Recommended)
+
+1. Push your repository to GitHub.
+2. In the [Render Dashboard](https://dashboard.render.com), click **New** (top right) and select **Blueprint**.
+3. Link your GitHub repository.
+4. Render will automatically detect the `render.yaml` file and parse the database and services.
+5. Fill in the required environment variables (such as `GEMINI_API_KEY`, `SERPER_API_KEY`, etc.) when prompted.
+   * *Note:* Once the backend is deployed, you will copy its public URL (e.g., `https://research-copilot-backend.onrender.com`) and paste it as the `FRONTEND_ORIGIN` env var for the backend, and `VITE_API_URL` (with `/api/v1` appended, e.g., `https://research-copilot-backend.onrender.com/api/v1`) for the frontend.
+6. Click **Apply** to deploy the database, backend, and frontend together.
+
+### Option B: Manual Deploy on Render Dashboard
+
+If you prefer to create the services manually, configure them as follows:
+
+1. **PostgreSQL Database**:
+   * Create a new **PostgreSQL** database on Render.
+   * Copy the **Internal Database URL** (for backend communication).
+
+2. **Backend Web Service**:
+   * Create a new **Web Service** on Render, linking your repository.
+   * **Runtime**: Select `Docker`.
+   * **Docker Build Context**: `backend`
+   * **Dockerfile Path**: `Dockerfile` (or leave context as root `.` and set Dockerfile Path to `backend/Dockerfile`).
+   * **Environment Variables**: Add `DATABASE_URL` (pasting the Internal Database URL from step 1), `JWT_SECRET`, `GEMINI_API_KEY`, etc.
+
+3. **Frontend Web Service**:
+   * Create a new **Web Service** on Render, linking your repository.
+   * **Runtime**: Select `Docker`.
+   * **Docker Build Context**: `frontend`
+   * **Dockerfile Path**: `Dockerfile` (or leave context as root `.` and set Dockerfile Path to `frontend/Dockerfile`).
+   * **Environment Variables**: Add `VITE_API_URL` (pasting the public URL of your deployed backend + `/api/v1`) and any other required build-time variables.
 
 ---
 

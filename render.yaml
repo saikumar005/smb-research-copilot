@@ -1,0 +1,56 @@
+databases:
+  - name: research-copilot-db
+    databaseName: research_copilot_db
+    user: postgres
+    plan: free
+
+services:
+  # Backend Web Service
+  - type: web
+    name: research-copilot-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: research-copilot-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "1440"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SERPER_API_KEY
+        sync: false
+      - key: COMPOSIO_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: FRONTEND_ORIGIN
+        sync: false # Set to your deployed frontend URL (e.g. https://research-copilot-frontend.onrender.com)
+      - key: LOG_JSON
+        value: "true"
+      - key: LANGFUSE_PUBLIC_KEY
+        sync: false
+      - key: LANGFUSE_SECRET_KEY
+        sync: false
+      - key: LANGFUSE_HOST
+        value: "https://cloud.langfuse.com"
+
+  # Frontend Web Service
+  - type: web
+    name: research-copilot-frontend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    envVars:
+      - key: VITE_API_URL
+        sync: false # Set to your deployed backend URL + /api/v1 (e.g. https://research-copilot-backend.onrender.com/api/v1)
+      - key: VITE_GOOGLE_CLIENT_ID
+        sync: false
