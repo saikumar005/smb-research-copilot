@@ -1,7 +1,6 @@
 databases:
   - name: research-copilot-db
     databaseName: research_copilot_db
-    user: postgres
     plan: free
 
 services:
