@@ -13,14 +13,14 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 # Set working directory
 WORKDIR /app
 
-# Copy dependency specifications
-COPY pyproject.toml ./
+# Copy dependency specifications (using backend/ since context is repo root)
+COPY backend/pyproject.toml ./
 
 # Install dependencies directly into the system python site-packages (no virtualenv needed inside Docker container)
 RUN uv pip install --system -r pyproject.toml
 
-# Copy the application source code
-COPY . .
+# Copy the application source code (using backend/ since context is repo root)
+COPY backend/ .
 
 # Expose FastAPI's default port
 EXPOSE 8000

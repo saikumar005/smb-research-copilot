@@ -13,7 +13,9 @@ services:
       - pgdata:/var/lib/postgresql/data
 
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: research_copilot_backend
     restart: always
     environment:
@@ -40,7 +42,8 @@ services:
 
   frontend:
     build:
-      context: ./frontend
+      context: .
+      dockerfile: frontend/Dockerfile
       args:
         - VITE_API_URL=http://localhost:8000/api/v1
         - VITE_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-1086927108795-d8gh931h0redgqtpt4ve3qmglekot2dq.apps.googleusercontent.com}

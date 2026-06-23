@@ -10,7 +10,7 @@ services:
     runtime: docker
     plan: free
     dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    dockerContext: .
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -53,7 +53,7 @@ services:
     runtime: docker
     plan: free
     dockerfilePath: ./frontend/Dockerfile
-    dockerContext: ./frontend
+    dockerContext: .
     envVars:
       - key: VITE_API_URL
         sync: false # Set to your deployed backend URL + /api/v1 (e.g. https://research-copilot-backend.onrender.com/api/v1)

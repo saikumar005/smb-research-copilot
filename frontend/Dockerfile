@@ -2,14 +2,14 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 
-# Copy dependency specifications
-COPY package*.json ./
+# Copy dependency specifications (using frontend/ since context is repo root)
+COPY frontend/package*.json ./
 
 # Install dependencies cleanly
 RUN npm ci
 
-# Copy application source code
-COPY . .
+# Copy application source code (using frontend/ since context is repo root)
+COPY frontend/ .
 
 # Inject build-time environment variables for Vite
 ARG VITE_API_URL
@@ -25,8 +25,8 @@ RUN npm run build
 FROM nginx:stable-alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# Copy Nginx SPA routing config
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy Nginx SPA routing config (using frontend/ since context is repo root)
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
