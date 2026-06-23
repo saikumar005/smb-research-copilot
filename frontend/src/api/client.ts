@@ -68,3 +68,12 @@ export const sendGmailEmail = (payload: {
 }): Promise<{ success: boolean; message: string }> =>
   apiClient.post('/integrations/gmail/send', payload).then(r => r.data);
 
+/** Submit Thumbs Up / Down feedback for an assistant response */
+export const submitFeedback = (
+  messageId: number,
+  score: number,
+  comment?: string
+): Promise<any> =>
+  apiClient.post(`/messages/${messageId}/feedback`, { score, comment }).then(r => r.data);
+
+

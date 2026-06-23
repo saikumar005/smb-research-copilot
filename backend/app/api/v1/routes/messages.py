@@ -80,6 +80,7 @@ def post_chat_message(
     # Extract outcomes
     final_text = agent_output.get("final_response", "[System Error: Agent response was empty.]")
     findings = agent_output.get("research_findings", [])
+    trace_id = agent_output.get("langfuse_trace_id")
     
     # Build structured metadata (stores links and query traces for the UI)
     metadata = {}
@@ -88,6 +89,8 @@ def post_chat_message(
             {"title": f["title"], "link": f["link"], "snippet": f["snippet"]}
             for f in findings
         ]
+    if trace_id:
+        metadata["langfuse_trace_id"] = trace_id
         
     # 4. Save the agent's final generated output
     assistant_msg = msg_repo.create(
@@ -163,6 +166,7 @@ def post_chat_message_stream(
         agent_output = await task
         final_text = agent_output.get("final_response", "[System Error: Agent response was empty.]")
         findings = agent_output.get("research_findings", [])
+        trace_id = agent_output.get("langfuse_trace_id")
         
         metadata = {}
         if findings:
@@ -170,6 +174,8 @@ def post_chat_message_stream(
                 {"title": f["title"], "link": f["link"], "snippet": f["snippet"]}
                 for f in findings
             ]
+        if trace_id:
+            metadata["langfuse_trace_id"] = trace_id
             
         # 4. Save the agent's final generated output to the database
         assistant_msg = msg_repo.create(
@@ -189,4 +195,60 @@ def post_chat_message_stream(
         yield f"data: {json.dumps(final_event)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+from app.schemas.message import MessageFeedback
+
+@router.post("/messages/{message_id}/feedback", response_model=MessageResponse)
+def submit_message_feedback(
+    message_id: int,
+    payload: MessageFeedback,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Submits thumbs up/down user feedback for an assistant response,
+    logs the evaluation score to Langfuse, and updates local DB metadata.
+    """
+    msg_repo = MessageRepository(db)
+    message = msg_repo.get_by_id(message_id)
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+        
+    chat_repo = ChatRepository(db)
+    chat = chat_repo.get_by_id(message.chat_id)
+    if not chat or chat.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to submit feedback for this message")
+        
+    # Update local DB metadata with user_feedback score
+    meta = message.metadata_json or {}
+    meta["user_feedback"] = payload.score
+    message = msg_repo.update_metadata(message, meta)
+    
+    # Log score to Langfuse if keys are set
+    trace_id = meta.get("langfuse_trace_id")
+    if trace_id:
+        from app.core.config import settings
+        if settings.LANGFUSE_PUBLIC_KEY and settings.LANGFUSE_SECRET_KEY:
+            try:
+                from langfuse import Langfuse
+                langfuse = Langfuse(
+                    public_key=settings.LANGFUSE_PUBLIC_KEY,
+                    secret_key=settings.LANGFUSE_SECRET_KEY,
+                    host=settings.LANGFUSE_HOST
+                )
+                langfuse.create_score(
+                    trace_id=trace_id,
+                    name="user-feedback",
+                    value=payload.score,
+                    comment=payload.comment or "User feedback rating from chat interface"
+                )
+                # Flush events
+                langfuse.flush()
+            except Exception as e:
+                import logging
+                logger = logging.getLogger("app.api.messages")
+                logger.warning(f"Failed to log feedback score to Langfuse: {e}")
+                
+    return message
 

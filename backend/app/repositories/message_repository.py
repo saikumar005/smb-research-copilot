@@ -29,3 +29,13 @@ class MessageRepository:
         self.db.commit()
         self.db.refresh(message)
         return message
+
+    def get_by_id(self, message_id: int) -> Optional[Message]:
+        return self.db.query(Message).filter(Message.id == message_id).first()
+
+    def update_metadata(self, message: Message, metadata_json: Optional[Dict[str, Any]]) -> Message:
+        message.metadata_json = metadata_json
+        self.db.add(message)
+        self.db.commit()
+        self.db.refresh(message)
+        return message

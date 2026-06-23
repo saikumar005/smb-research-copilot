@@ -99,6 +99,7 @@ def run_action(
     # Extract results
     final_text = agent_output.get("final_response", "[System Error: Action returned an empty response.]")
     findings = agent_output.get("research_findings", [])
+    trace_id = agent_output.get("langfuse_trace_id")
 
     # Compile sources metadata for UI display
     metadata = {"action_mode": payload.mode}
@@ -107,6 +108,8 @@ def run_action(
             {"title": f["title"], "link": f["link"], "snippet": f["snippet"]}
             for f in findings
         ]
+    if trace_id:
+        metadata["langfuse_trace_id"] = trace_id
 
     # 4. Save the agent's output
     assistant_msg = msg_repo.create(
@@ -188,6 +191,7 @@ def run_action_stream(
         agent_output = await task
         final_text = agent_output.get("final_response", "[System Error: Action returned an empty response.]")
         findings = agent_output.get("research_findings", [])
+        trace_id = agent_output.get("langfuse_trace_id")
         
         metadata = {"action_mode": payload.mode}
         if findings:
@@ -195,6 +199,8 @@ def run_action_stream(
                 {"title": f["title"], "link": f["link"], "snippet": f["snippet"]}
                 for f in findings
             ]
+        if trace_id:
+            metadata["langfuse_trace_id"] = trace_id
             
         # 4. Save the agent's output to the database
         assistant_msg = msg_repo.create(

@@ -211,6 +211,9 @@ def run_agent_workflow(
         else:
             final_state = asyncio.run(_run_ainvoke())
         
+        if cb and hasattr(cb, "last_trace_id") and cb.last_trace_id:
+            final_state["langfuse_trace_id"] = cb.last_trace_id
+        
         # Save new extracted facts locally in the background
         final_response = final_state.get("final_response")
         if final_response and not final_response.startswith("[System Error"):
@@ -316,6 +319,9 @@ async def run_agent_workflow_async(
     
     try:
         final_state = await graph.ainvoke(initial_state, config=config)
+        
+        if cb and hasattr(cb, "last_trace_id") and cb.last_trace_id:
+            final_state["langfuse_trace_id"] = cb.last_trace_id
         
         # Save new extracted facts locally in the background
         final_response = final_state.get("final_response")

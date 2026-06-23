@@ -13,8 +13,10 @@ import {
   Sparkles,
   X,
   Loader2,
+  ThumbsUp,
+  ThumbsDown,
 } from 'lucide-react';
-import { apiClient, logger_session_expiry, getGmailStatus, getGmailConnectUrl, parseDraft, sendGmailEmail } from '../api/client';
+import { apiClient, logger_session_expiry, getGmailStatus, getGmailConnectUrl, parseDraft, sendGmailEmail, submitFeedback } from '../api/client';
 import { AppLayout } from '../components/layout/AppLayout';
 import { Spinner } from '../components/ui/Spinner';
 import { MemoryManager } from '../components/memory/MemoryManager';
@@ -38,6 +40,8 @@ interface Message {
   metadata_json?: {
     sources?: Source[];
     action_mode?: string;
+    user_feedback?: number;
+    langfuse_trace_id?: string;
   };
   created_at: string;
 }
@@ -657,6 +661,36 @@ export const Chat: React.FC = () => {
     }, tempUserMsg);
   };
 
+  const handleFeedback = async (messageId: number, score: number) => {
+    try {
+      const msg = messages.find(m => m.id === messageId);
+      if (!msg) return;
+
+      const currentFeedback = msg.metadata_json?.user_feedback;
+      const targetScore = currentFeedback === score ? 0 : score;
+
+      await submitFeedback(messageId, targetScore);
+
+      setMessages(prev => prev.map(m => {
+        if (m.id === messageId) {
+          const updatedMeta = { 
+            ...(m.metadata_json || {}), 
+            user_feedback: targetScore 
+          };
+          return { ...m, metadata_json: updatedMeta };
+        }
+        return m;
+      }));
+
+      if (targetScore !== 0) {
+        showToast('Feedback submitted successfully! ✓', 'success');
+      }
+    } catch (err) {
+      console.error('Failed to submit feedback:', err);
+      showToast('Could not record feedback.', 'error');
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     navigate('/login');
@@ -959,6 +993,25 @@ export const Chat: React.FC = () => {
                     {/* Compact collapsible sources toggle — replaces old numbered SOURCES block */}
                     {msg.role === 'assistant' && msg.metadata_json?.sources && (
                       <SourcesToggle sources={msg.metadata_json.sources} />
+                    )}
+                    {/* User feedback buttons */}
+                    {msg.role === 'assistant' && (
+                      <div className="message-feedback-row">
+                        <button
+                          className={`feedback-btn ${msg.metadata_json?.user_feedback === 1 ? 'active' : ''}`}
+                          onClick={() => handleFeedback(msg.id, 1)}
+                          title="Thumbs up"
+                        >
+                          <ThumbsUp size={12} />
+                        </button>
+                        <button
+                          className={`feedback-btn ${msg.metadata_json?.user_feedback === -1 ? 'active' : ''}`}
+                          onClick={() => handleFeedback(msg.id, -1)}
+                          title="Thumbs down"
+                        >
+                          <ThumbsDown size={12} />
+                        </button>
+                      </div>
                     )}
                     {/* Send via Gmail button — only on email_draft messages */}
                     {msg.role === 'assistant' && msg.metadata_json?.action_mode === 'email_draft' && (

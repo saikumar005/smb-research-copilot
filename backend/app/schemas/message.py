@@ -16,3 +16,7 @@ class MessageResponse(MessageBase):
     id: int
     chat_id: int
     created_at: datetime
+
+class MessageFeedback(BaseModel):
+    score: float
+    comment: Optional[str] = None
